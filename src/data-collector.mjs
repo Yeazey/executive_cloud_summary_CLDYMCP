@@ -139,6 +139,17 @@ export class CloudabilityDataCollector {
     return await this.callToolSafe('list_budgets', { limit: 50 }, []);
   }
 
+  async collectByBusinessDimension(dimensionField) {
+    const dates = DATE_CONFIG.getCurrentMonth();
+    console.log(`📊 Collecting by ${dimensionField}...`);
+    return await this.callToolSafe('cldy_cost_report_run', {
+      dimensions: [dimensionField],
+      metrics: ['total_amortized_cost', 'public_on_demand_cost', 'vcpu_hours', 'usage_hours', 'gb_months', 'resource_identifier_count'],
+      start_date: dates.start, end_date: dates.end,
+      sort_by: 'total_amortized_cost', order: 'DESC', limit: 50
+    }, { results: [] });
+  }
+
   async collectAnomalies() {
     const dates = DATE_CONFIG.getLast90Days();
     const viewId = await this.getDefaultViewId();
@@ -205,7 +216,11 @@ export class CloudabilityDataCollector {
       anomalies: await this.collectAnomalies(),
       forecast: await this.collectForecast(),
       estimate: await this.collectEstimate(),
-      budgets: await this.collectBudgets()
+      budgets: await this.collectBudgets(),
+      byProduct: await this.collectByBusinessDimension('category4'),
+      byApplication: await this.collectByBusinessDimension('category3'),
+      byBusinessUnit: await this.collectByBusinessDimension('category5'),
+      byTeam: await this.collectByBusinessDimension('category2')
     };
 
     await this.client.close();
