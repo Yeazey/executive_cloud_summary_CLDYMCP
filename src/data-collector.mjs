@@ -117,9 +117,22 @@ export class CloudabilityDataCollector {
 
   async collectRightsizing() {
     console.log('⚡ Collecting rightsizing recommendations...');
-    return await this.callToolSafe('cldy_rightsizing_list', {
-      limit: 500, sort: '-potentialSavings'
-    }, []);
+    // Get all rightsizing - paginate if needed
+    const all = [];
+    let offset = 0;
+    const limit = 500;
+    while (true) {
+      const batch = await this.callToolSafe('cldy_rightsizing_list', {
+        limit, offset, sort: '-potentialSavings'
+      }, []);
+      const items = Array.isArray(batch) ? batch : [];
+      all.push(...items);
+      if (items.length < limit) break;
+      offset += limit;
+      console.log(`  ⚡ Fetched ${all.length} rightsizing recommendations...`);
+    }
+    console.log(`  ⚡ Total: ${all.length} rightsizing recommendations`);
+    return all;
   }
 
   async collectForecast() {

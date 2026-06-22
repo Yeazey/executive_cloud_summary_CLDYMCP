@@ -70,9 +70,9 @@ export class InsightEngine {
   #rightsizingActions() {
     const byAccount = {};
     for (const r of this.rightsizing) {
-      const acct = r.vendorAccountName ?? 'Unknown';
+      const acct = r.vendorAccountId ?? r.vendorService ?? 'Unknown';
       byAccount[acct] = byAccount[acct] || { savings: 0, count: 0 };
-      byAccount[acct].savings += r.monthlySavings ?? r.potentialSavings ?? 0;
+      byAccount[acct].savings += r.potentialSavings ?? r.costSavings ?? 0;
       byAccount[acct].count++;
     }
     return Object.entries(byAccount).map(([acct, { savings, count }]) => ({
@@ -102,13 +102,14 @@ export class InsightEngine {
 
   #anomalyActions() {
     return this.anomalies
-      .filter(a => (a.severity ?? '').toLowerCase() === 'high' || (a.percentageIncrease ?? 0) > 50)
+      .filter(a => parseFloat(a.unusualSpendPercentage || a.percentageIncrease || 0) > 50)
+      .slice(0, 5)
       .map(a => ({
         priority: 'DO_NOW',
-        title: `Investigate anomaly in ${a.vendorAccountName ?? 'unknown'}/${a.service ?? 'unknown'}`,
-        impact: a.cost ?? 0,
+        title: `Investigate anomaly in ${a.vendorAccountName ?? 'unknown'}/${a.enhancedServiceName ?? a.service ?? 'unknown'}`,
+        impact: parseFloat(a.unusualSpend || a.cost || 0),
         effort: 'low',
-        detail: `${(a.percentageIncrease ?? 0).toFixed(0)}% spike on ${a.date ?? 'unknown date'} (${this.#fmt(a.cost)}).`,
+        detail: `${parseFloat(a.unusualSpendPercentage || 0).toFixed(0)}% spike on ${a.date ?? 'unknown date'} ($${parseFloat(a.unusualSpend || 0).toFixed(0)} unusual spend).`,
         category: 'anomaly',
       }));
   }

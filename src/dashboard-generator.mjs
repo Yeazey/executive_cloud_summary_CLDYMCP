@@ -239,7 +239,7 @@ class DashboardGenerator {
     const summary = this.unitEconomics?.summary || {};
     const byService = this.getComputeServices(this.unitEconomics?.byService);
     const byInstance = Object.entries(this.unitEconomics?.byInstanceType || {}).slice(0, 10);
-    const rightsizing = (this.data.rightsizing || []).slice(0, 15);
+    const rightsizing = this.data.rightsizing || [];
     const anomalies = (this.data.anomalies || []).slice(0, 10);
     const historical = this.data.historicalMonths || [];
 
@@ -332,7 +332,7 @@ ${this.generateAnomaliesPage(anomalies)}
       </div>
       <div class="card kpi-card">
         <div class="kpi-label">Optimization Potential ${this.cldyLink('rightsizing/explorer?dimensions=vendor%2Cservice%2Caction%2Cregion&duration=ten-day&costBasis=on-demand')}</div>
-        <div class="kpi-value">${this.fmt((this.data.rightsizing || []).reduce((s, r) => s + (r.monthlySavings || r.potentialSavings || 0), 0))}</div>
+        <div class="kpi-value">${this.fmt((this.data.rightsizing || []).reduce((s, r) => s + (r.monthlySavings || r.potentialSavings || r.costSavings || 0), 0))}</div>
         <div class="kpi-delta up">${(this.data.rightsizing || []).length} recommendations</div>
         <div class="kpi-context">Monthly savings available</div>
       </div>
@@ -586,109 +586,151 @@ ${this.generateAnomaliesPage(anomalies)}
   }
 
   generateOptimizationPage(rightsizing, waste) {
-    const totalSavings = rightsizing.reduce((s, r) => s + (r.monthlySavings || r.potentialSavings || 0), 0);
+    const totalSavings = rightsizing.reduce((s, r) => s + (r.potentialSavings || r.costSavings || 0), 0);
     const categories = waste?.categories || [];
     const rsLink = this.cldyLink('rightsizing/explorer?dimensions=vendor%2Cservice%2Caction%2Cregion&duration=ten-day&costBasis=on-demand');
 
-    // Group rightsizing by action urgency
-    const doNow = rightsizing.filter(r => (r.savingsPercentage || 0) > 40 || (r.monthlySavings || 0) > 1000);
-    const plan = rightsizing.filter(r => (r.savingsPercentage || 0) > 20 && (r.savingsPercentage || 0) <= 40 && (r.monthlySavings || 0) <= 1000);
-    const automate = rightsizing.filter(r => (r.savingsPercentage || 0) <= 20);
+    // Realized savings
+    const realized = rightsizing.filter(r => r.realizedSavings != null && parseFloat(r.realizedSavings) > 0);
+    const totalRealized = realized.reduce((s, r) => s + parseFloat(r.realizedSavings || 0), 0);
 
-    // Group by account for commitment insights
+    // Group by status for ROI tracking
+    const byStatus = {};
+    rightsizing.forEach(r => {
+      const st = r.status || 'Unknown';
+      byStatus[st] = byStatus[st] || { count: 0, savings: 0 };
+      byStatus[st].count++;
+      byStatus[st].savings += (r.potentialSavings || r.costSavings || 0);
+    });
+
+    // Group by urgency
+    const doNow = rightsizing.filter(r => (r.percentSavings || 0) >= 50);
+    const plan = rightsizing.filter(r => (r.percentSavings || 0) >= 20 && (r.percentSavings || 0) < 50);
+    const automate = rightsizing.filter(r => (r.percentSavings || 0) < 20);
+
+    // Group by service
+    const byService = {};
+    rightsizing.forEach(r => {
+      const svc = r.vendorService || 'Unknown';
+      byService[svc] = byService[svc] || { count: 0, savings: 0 };
+      byService[svc].count++;
+      byService[svc].savings += (r.potentialSavings || r.costSavings || 0);
+    });
+    const servicesSorted = Object.entries(byService).sort((a, b) => b[1].savings - a[1].savings);
+
+    // Group by account
     const byAcct = {};
     rightsizing.forEach(r => {
-      const a = r.vendorAccountName || 'Unknown';
+      const a = r.vendorAccountId || 'Unknown';
       byAcct[a] = byAcct[a] || { count: 0, savings: 0 };
       byAcct[a].count++;
-      byAcct[a].savings += (r.monthlySavings || r.potentialSavings || 0);
+      byAcct[a].savings += (r.potentialSavings || r.costSavings || 0);
     });
     const acctSorted = Object.entries(byAcct).sort((a, b) => b[1].savings - a[1].savings);
 
-    // ESR/commitment data
+    // ESR/commitment
     const esr = this.unitEconomics?.esr || {};
     const esrVal = esr?.current?.rate ?? 0;
-    const esrTarget = 23;
     const additionalSavings = esr?.targetSavings ?? 0;
 
     return `
   <div class="page" id="optimization">
-    <div class="grid grid-5" style="grid-template-columns:repeat(4,1fr)">
+    <div class="grid grid-5" style="grid-template-columns:repeat(5,1fr)">
       <div class="card kpi-card">
-        <div class="kpi-label">Total Savings Available ${rsLink}</div>
+        <div class="kpi-label">Rightsizing Savings ${rsLink}</div>
         <div class="kpi-value" style="color:var(--positive)">${this.fmt(totalSavings)}<span style="font-size:0.4em;color:var(--muted)">/mo</span></div>
-        <div class="kpi-context">${rightsizing.length} rightsizing recommendations</div>
+        <div class="kpi-context">${rightsizing.length} recommendations</div>
       </div>
       <div class="card kpi-card">
         <div class="kpi-label">Commitment Opportunity</div>
         <div class="kpi-value" style="color:var(--accent)">${this.fmt(additionalSavings)}<span style="font-size:0.4em;color:var(--muted)">/mo</span></div>
-        <div class="kpi-context">If ESR reaches ${esrTarget}% (currently ${esrVal.toFixed(1)}%)</div>
+        <div class="kpi-context">ESR: ${esrVal.toFixed(1)}% → target 23%</div>
       </div>
       <div class="card kpi-card">
-        <div class="kpi-label">Quick Wins</div>
-        <div class="kpi-value">${doNow.length}</div>
-        <div class="kpi-context">High savings, immediate action</div>
+        <div class="kpi-label">Realized Savings</div>
+        <div class="kpi-value" style="color:var(--positive)">${this.fmt(totalRealized)}</div>
+        <div class="kpi-context">${realized.length} actions completed</div>
+      </div>
+      <div class="card kpi-card">
+        <div class="kpi-label">Adoption Rate</div>
+        <div class="kpi-value">${rightsizing.length > 0 ? ((byStatus['Done']?.count || byStatus['Closed']?.count || 0) / rightsizing.length * 100).toFixed(0) : 0}%</div>
+        <div class="kpi-context">Actioned vs total</div>
       </div>
       <div class="card kpi-card">
         <div class="kpi-label">Estimated Waste</div>
         <div class="kpi-value" style="color:var(--negative)">${this.fmt(waste?.total ?? 0)}<span style="font-size:0.4em;color:var(--muted)">/mo</span></div>
-        <div class="kpi-context">${waste?.industryComparison?.yourPercent?.toFixed(0) || '?'}% of spend (industry: 29%)</div>
+        <div class="kpi-context">${waste?.industryComparison?.yourPercent?.toFixed(0) || '?'}% vs 29% industry avg</div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="section-title">📋 Optimization Pipeline (by Status)</div>
+      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px">
+        ${Object.entries(byStatus).sort((a,b) => b[1].savings - a[1].savings).map(([st, d]) => `
+          <div style="padding:12px;background:var(--bg);border-radius:8px;text-align:center">
+            <div style="font-size:1.2em;font-weight:700">${d.count}</div>
+            <div style="font-size:0.75em;color:var(--muted)">${st}</div>
+            <div style="font-size:0.8em;color:var(--positive)">${this.fmt(d.savings)}</div>
+          </div>
+        `).join('')}
       </div>
     </div>
 
     <div class="card" style="margin-bottom:16px;border-left:4px solid var(--negative)">
-      <div class="section-title">🔴 Do Now — High Impact, Act Immediately (${doNow.length} items, ${this.fmt(doNow.reduce((s,r) => s + (r.monthlySavings || 0), 0))}/mo)</div>
-      <p style="color:var(--muted);margin-bottom:12px;font-size:0.85em">Resources with >40% savings potential or >$1K/mo. These are over-provisioned and should be rightsized this sprint.</p>
-      ${doNow.length > 0 ? `<table><thead><tr><th>Resource</th><th>Account</th><th>Current → Recommended</th><th>Savings</th></tr></thead><tbody>
-        ${doNow.slice(0, 10).map(r => `<tr>
-          <td style="font-family:monospace;font-size:0.8em">${(r.resourceIdentifier || '').slice(0, 28)}</td>
-          <td>${r.vendorAccountName || '—'}</td>
-          <td>${r.currentInstanceType || '?'} → <span style="color:var(--positive)">${r.recommendedInstanceType || '?'}</span></td>
-          <td style="font-weight:700;color:var(--positive)">${this.fmt(r.monthlySavings || r.potentialSavings || 0)} (${r.savingsPercentage || 0}%)</td>
-        </tr>`).join('')}
-      </tbody></table>` : '<div style="color:var(--muted)">No high-urgency rightsizing recommendations.</div>'}
+      <div class="section-title">🔴 Do Now — Act This Sprint (${doNow.length} items, ${this.fmt(doNow.reduce((s,r) => s + (r.potentialSavings || 0), 0))}/mo)
+        <div class="pivot-controls" style="margin:0;margin-left:auto">
+          <button class="pivot-btn active" onclick="filterOptRows('doNow','all')">All</button>
+          ${servicesSorted.slice(0,4).map(([svc]) => `<button class="pivot-btn" onclick="filterOptRows('doNow','${svc}')">${svc.replace('AWS ','').replace('Azure ','')}</button>`).join('')}
+        </div>
+      </div>
+      <p style="color:var(--muted);margin-bottom:12px;font-size:0.85em">High savings (>40%) or >$1K/mo. Over-provisioned, rightsize immediately.</p>
+      <table><thead><tr><th>Resource</th><th>Service</th><th>Current → Recommended</th><th>Savings</th><th>Status</th></tr></thead><tbody class="opt-tbody" id="doNow-tbody">
+      ${doNow.slice(0, 15).map(r => `<tr data-svc="${r.vendorService || ''}">
+        <td style="font-family:monospace;font-size:0.78em">${(r.resourceIdentifier || '').slice(0, 30)}</td>
+        <td>${r.vendorService || '—'}</td>
+        <td>${r.resourceType || '?'} → <span style="color:var(--positive)">${r.recommendedResourceType || '?'}</span></td>
+        <td style="font-weight:700;color:var(--positive)">${this.fmt(r.potentialSavings || 0)} (${r.percentSavings || 0}%)</td>
+        <td><span class="badge ${r.status === 'Done' ? 'badge-green' : r.status === 'In Progress' ? 'badge-yellow' : 'badge-red'}">${r.status || 'Open'}</span></td>
+      </tr>`).join('')}
+      </tbody></table>
     </div>
 
     <div class="card" style="margin-bottom:16px;border-left:4px solid var(--warning)">
-      <div class="section-title">🟡 Plan — Requires Coordination (${plan.length} items, ${this.fmt(plan.reduce((s,r) => s + (r.monthlySavings || 0), 0))}/mo)</div>
-      <p style="color:var(--muted);margin-bottom:12px;font-size:0.85em">Moderate savings (20-40%). Validate with app owners, schedule during maintenance windows.</p>
-      ${plan.length > 0 ? `<table><thead><tr><th>Resource</th><th>Account</th><th>Current → Recommended</th><th>Savings</th></tr></thead><tbody>
-        ${plan.slice(0, 8).map(r => `<tr>
-          <td style="font-family:monospace;font-size:0.8em">${(r.resourceIdentifier || '').slice(0, 28)}</td>
-          <td>${r.vendorAccountName || '—'}</td>
-          <td>${r.currentInstanceType || '?'} → <span style="color:var(--positive)">${r.recommendedInstanceType || '?'}</span></td>
-          <td style="font-weight:700">${this.fmt(r.monthlySavings || r.potentialSavings || 0)} (${r.savingsPercentage || 0}%)</td>
-        </tr>`).join('')}
-      </tbody></table>` : '<div style="color:var(--muted)">No medium-priority recommendations.</div>'}
+      <div class="section-title">🟡 Plan — Validate & Schedule (${plan.length} items, ${this.fmt(plan.reduce((s,r) => s + (r.potentialSavings || 0), 0))}/mo)</div>
+      <p style="color:var(--muted);margin-bottom:12px;font-size:0.85em">20-40% savings. Coordinate with app owners, schedule during maintenance.</p>
+      <table><thead><tr><th>Resource</th><th>Service</th><th>Current → Recommended</th><th>Savings</th><th>Status</th></tr></thead><tbody>
+      ${plan.slice(0, 10).map(r => `<tr>
+        <td style="font-family:monospace;font-size:0.78em">${(r.resourceIdentifier || '').slice(0, 30)}</td>
+        <td>${r.vendorService || '—'}</td>
+        <td>${r.resourceType || '?'} → <span style="color:var(--positive)">${r.recommendedResourceType || '?'}</span></td>
+        <td style="font-weight:700">${this.fmt(r.potentialSavings || 0)} (${r.percentSavings || 0}%)</td>
+        <td><span class="badge ${r.status === 'Done' ? 'badge-green' : 'badge-yellow'}">${r.status || 'Open'}</span></td>
+      </tr>`).join('')}
+      </tbody></table>
     </div>
 
     <div class="card" style="margin-bottom:16px;border-left:4px solid var(--positive)">
-      <div class="section-title">🟢 Automate — Low-Touch Optimization (${automate.length} items)</div>
-      <p style="color:var(--muted);margin-bottom:12px;font-size:0.85em">Small savings (<20%). Set up automated policies or scheduling rules.</p>
-      <div style="color:var(--muted);font-size:0.85em">${automate.length} resources with minor optimization opportunities totaling ${this.fmt(automate.reduce((s,r) => s + (r.monthlySavings || 0), 0))}/mo.</div>
+      <div class="section-title">🟢 Automate — Policy-Driven (${automate.length} items, ${this.fmt(automate.reduce((s,r) => s + (r.potentialSavings || 0), 0))}/mo)</div>
+      <p style="color:var(--muted);margin-bottom:12px;font-size:0.85em"><20% savings. Automate via scheduling or tagging policies.</p>
+      <div style="font-size:0.85em;color:var(--muted)">${automate.length} resources across ${[...new Set(automate.map(r => r.vendorService))].length} services.</div>
     </div>
 
     <div class="grid grid-2">
       <div class="card">
-        <div class="section-title">💰 Commitment Portfolio Strategy</div>
-        <div style="margin-bottom:16px">
-          <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>Current ESR</span><strong>${esrVal.toFixed(1)}%</strong></div>
+        <div class="section-title">💰 Commitment Portfolio</div>
+        <div style="margin-bottom:12px">
+          <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>ESR</span><strong>${esrVal.toFixed(1)}%</strong></div>
           <div class="benchmark-bar"><div class="benchmark-fill" style="width:${Math.min(esrVal / 46 * 100, 100)}%;background:var(--accent)"></div></div>
-          <div style="font-size:0.75em;color:var(--muted);margin-top:4px">Target: ${esrTarget}% (75th percentile) | World-class: 40%+</div>
+          <div style="font-size:0.75em;color:var(--muted);margin-top:4px">75th: 23% | 90th: 40% | World-class: 46%</div>
         </div>
-        <div style="border-top:1px solid var(--border);padding-top:12px;font-size:0.85em;color:var(--muted)">
-          <p style="margin-bottom:8px"><strong style="color:var(--text)">Recommendation:</strong> ${esrVal < 15 ? 'Your coverage is low. Purchase Savings Plans for your top 3-5 steady-state instance families to reach 23% ESR.' : esrVal < 23 ? 'Good start. Extend coverage to remaining production workloads to hit 75th percentile.' : esrVal < 40 ? 'Strong coverage. Consider convertible RIs for remaining on-demand spend.' : 'Excellent coverage. Monitor utilization to avoid over-commitment.'}</p>
-          <p><strong style="color:var(--text)">Potential gain:</strong> ${this.fmt(additionalSavings)}/mo additional savings at ${esrTarget}% ESR</p>
-        </div>
+        <p style="font-size:0.85em;color:var(--muted)">${esrVal < 15 ? 'Low coverage. Purchase Savings Plans for top steady-state workloads.' : esrVal < 23 ? 'Good start. Extend to remaining production instances.' : 'Strong. Monitor utilization to avoid over-commitment.'}</p>
+        <p style="font-size:0.85em;margin-top:8px"><strong>Potential:</strong> ${this.fmt(additionalSavings)}/mo at 23% ESR</p>
       </div>
-
       <div class="card">
-        <div class="section-title">📊 Savings by Account ${rsLink}</div>
-        <table><thead><tr><th>Account</th><th>Recommendations</th><th>Monthly Savings</th></tr></thead><tbody>
-        ${acctSorted.slice(0, 8).map(([acct, d]) => `<tr>
-          <td><strong>${acct}</strong></td>
-          <td>${d.count}</td>
-          <td style="font-weight:700;color:var(--positive)">${this.fmt(d.savings)}</td>
+        <div class="section-title">📊 Savings by Service ${rsLink}</div>
+        <table><thead><tr><th>Service</th><th>Count</th><th>Savings</th></tr></thead><tbody>
+        ${servicesSorted.slice(0, 8).map(([svc, d]) => `<tr>
+          <td><strong>${svc}</strong></td><td>${d.count}</td><td style="color:var(--positive);font-weight:700">${this.fmt(d.savings)}</td>
         </tr>`).join('')}
         </tbody></table>
       </div>
@@ -836,7 +878,7 @@ ${this.generateAnomaliesPage(anomalies)}
   }
 
   generateAnomaliesPage(anomalies) {
-    const highSev = anomalies.filter(a => a.severity === 'high' || (a.percentageIncrease || 0) > 100);
+    const highSev = anomalies.filter(a => parseFloat(a.unusualSpendPercentage || a.percentageIncrease || 0) > 50);
     return `
   <div class="page" id="anomalies">
     <div class="grid grid-3" style="grid-template-columns:1fr 1fr 1fr">
@@ -852,8 +894,8 @@ ${this.generateAnomaliesPage(anomalies)}
       </div>
       <div class="card kpi-card">
         <div class="kpi-label">Largest Spike ${this.cldyLink('anomalies')}</div>
-        <div class="kpi-value">${anomalies[0] ? `+${anomalies[0].percentageIncrease || 0}%` : '—'}</div>
-        <div class="kpi-context">${anomalies[0]?.vendorAccountName || '—'}</div>
+        <div class="kpi-value">${anomalies[0] ? `+${parseFloat(anomalies[0].unusualSpendPercentage || 0).toFixed(0)}%` : '—'}</div>
+        <div class="kpi-context">${anomalies[0]?.vendorAccountName || '—'} / ${anomalies[0]?.enhancedServiceName || ''}</div>
       </div>
     </div>
 
@@ -868,13 +910,14 @@ ${this.generateAnomaliesPage(anomalies)}
         <thead><tr><th>Date</th><th>Account</th><th>Service</th><th>Increase</th><th>Cost</th><th>Severity</th></tr></thead>
         <tbody>
         ${anomalies.map(a => {
-          const sev = (a.severity || (a.percentageIncrease > 100 ? 'high' : 'medium'));
+          const pct = parseFloat(a.unusualSpendPercentage || a.percentageIncrease || 0);
+          const sev = pct > 100 ? 'high' : pct > 50 ? 'medium' : 'low';
           return `<tr data-severity="${sev}">
             <td>${a.date || '—'}</td>
             <td>${a.vendorAccountName || '—'}</td>
-            <td>${a.service || '—'}</td>
-            <td style="color:var(--negative)">+${(a.percentageIncrease || 0).toFixed(0)}%</td>
-            <td style="font-weight:700">${this.fmt(a.cost || 0)}</td>
+            <td>${a.enhancedServiceName || a.service || '—'}</td>
+            <td style="color:var(--negative)">+${pct.toFixed(0)}%</td>
+            <td style="font-weight:700">${this.fmt(parseFloat(a.unusualSpend || a.cost || 0))}</td>
             <td><span class="badge ${sev === 'high' ? 'badge-red' : 'badge-yellow'}">${sev}</span></td>
           </tr>`;
         }).join('')}
@@ -954,7 +997,7 @@ ${this.generateAnomaliesPage(anomalies)}
       esrSavings: esr?.current?.savings ?? 0,
       topAccount: topAccounts[0] ? { name: topAccounts[0][0], cost: topAccounts[0][1] } : null,
       rightsizingCount: (this.data.rightsizing || []).length,
-      rightsizingSavings: (this.data.rightsizing || []).reduce((s, r) => s + (r.monthlySavings || r.potentialSavings || 0), 0),
+      rightsizingSavings: (this.data.rightsizing || []).reduce((s, r) => s + (r.monthlySavings || r.potentialSavings || r.costSavings || 0), 0),
       anomalyCount: (this.data.anomalies || []).length,
       wasteTotal: this.unitEconomics?.waste?.total ?? 0
     };
@@ -1264,6 +1307,15 @@ ${this.generateAnomaliesPage(anomalies)}
       event.target.classList.add('active');
       document.querySelectorAll('#ai-table tbody tr').forEach(row => {
         row.style.display = (provider === 'all' || row.dataset.provider === provider) ? '' : 'none';
+      });
+    }
+
+    // Optimization service filter
+    function filterOptRows(section, svc) {
+      event.target.parentElement.querySelectorAll('.pivot-btn').forEach(b => b.classList.remove('active'));
+      event.target.classList.add('active');
+      document.querySelectorAll('#' + section + '-tbody tr').forEach(row => {
+        row.style.display = (svc === 'all' || row.dataset.svc === svc) ? '' : 'none';
       });
     }
 

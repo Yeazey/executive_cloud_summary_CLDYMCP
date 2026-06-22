@@ -404,7 +404,7 @@ export class UnitEconomicsCalculator {
 
     // Rightsizing waste
     const rightsizingAmount = this.rightsizingData.reduce(
-      (sum, r) => sum + parseFloat(r.monthlySavings || 0), 0
+      (sum, r) => sum + parseFloat(r.potentialSavings || r.costSavings || 0), 0
     );
     const rightsizingCount = this.rightsizingData.length;
 
