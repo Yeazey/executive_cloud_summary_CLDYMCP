@@ -43,12 +43,32 @@ export class CloudabilityDataCollector {
       name: 'cldy_cost_report_run',
       arguments: {
         dimensions: ['vendor_account_name', 'category3'],
-        metrics: ['unblended_cost'],
+        metrics: ['unblended_cost', 'total_amortized_cost', 'public_on_demand_cost'],
         start_date: dates.start,
         end_date: dates.end,
         sort_by: 'unblended_cost',
         order: 'DESC',
         limit: 100
+      }
+    });
+    
+    return JSON.parse(result.content[0].text);
+  }
+
+  async collectCurrentMonthWithResources() {
+    const dates = DATE_CONFIG.getCurrentMonth();
+    console.log(`📊 Collecting current month resource metrics (${dates.start} to ${dates.end})...`);
+    
+    const result = await this.client.callTool({
+      name: 'cldy_cost_report_run',
+      arguments: {
+        dimensions: ['vendor_account_name', 'service_name', 'instance_type'],
+        metrics: ['total_amortized_cost', 'public_on_demand_cost', 'vcpu_hours', 'usage_hours', 'gb_months', 'resource_identifier_count'],
+        start_date: dates.start,
+        end_date: dates.end,
+        sort_by: 'total_amortized_cost',
+        order: 'DESC',
+        limit: 500
       }
     });
     
@@ -63,12 +83,32 @@ export class CloudabilityDataCollector {
       name: 'cldy_cost_report_run',
       arguments: {
         dimensions: ['vendor_account_name', 'category3'],
-        metrics: ['unblended_cost'],
+        metrics: ['unblended_cost', 'total_amortized_cost', 'public_on_demand_cost'],
         start_date: dates.start,
         end_date: dates.end,
         sort_by: 'unblended_cost',
         order: 'DESC',
         limit: 100
+      }
+    });
+    
+    return JSON.parse(result.content[0].text);
+  }
+
+  async collectPreviousMonthWithResources() {
+    const dates = DATE_CONFIG.getPreviousMonth();
+    console.log(`📊 Collecting previous month resource metrics (${dates.start} to ${dates.end})...`);
+    
+    const result = await this.client.callTool({
+      name: 'cldy_cost_report_run',
+      arguments: {
+        dimensions: ['vendor_account_name', 'service_name', 'instance_type'],
+        metrics: ['total_amortized_cost', 'public_on_demand_cost', 'vcpu_hours', 'usage_hours', 'gb_months', 'resource_identifier_count'],
+        start_date: dates.start,
+        end_date: dates.end,
+        sort_by: 'total_amortized_cost',
+        order: 'DESC',
+        limit: 500
       }
     });
     
@@ -124,6 +164,57 @@ export class CloudabilityDataCollector {
     return JSON.parse(result.content[0].text);
   }
 
+  async collectHistoricalMonths(monthsBack = 12) {
+    console.log(`📊 Collecting historical data (last ${monthsBack} months)...`);
+    const historicalData = [];
+    const today = new Date();
+    
+    for (let i = 0; i < monthsBack; i++) {
+      const date = new Date();
+      date.setMonth(date.getMonth() - i);
+      const year = date.getFullYear();
+      const month = date.getMonth() + 1;
+      const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
+      
+      // Calculate end date (use today for current month, last day for past months)
+      let endDate;
+      if (i === 0) {
+        // Current month - use today's date
+        endDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+      } else {
+        // Past months - use last day of month
+        const lastDay = new Date(year, month, 0).getDate();
+        endDate = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+      }
+      
+      console.log(`  📅 Fetching ${year}-${String(month).padStart(2, '0')}...`);
+      
+      const result = await this.client.callTool({
+        name: 'cldy_cost_report_run',
+        arguments: {
+          dimensions: ['vendor_account_name'],
+          metrics: ['total_amortized_cost', 'public_on_demand_cost', 'vcpu_hours', 'usage_hours'],
+          start_date: startDate,
+          end_date: endDate,
+          sort_by: 'total_amortized_cost',
+          order: 'DESC',
+          limit: 100
+        }
+      });
+      
+      const monthData = JSON.parse(result.content[0].text);
+      historicalData.push({
+        month: `${year}-${String(month).padStart(2, '0')}`,
+        startDate,
+        endDate,
+        data: monthData
+      });
+    }
+    
+    return historicalData;
+  }
+
+
   async collectAll() {
     await this.connect();
     
@@ -136,7 +227,10 @@ export class CloudabilityDataCollector {
       },
       currentMonth: await this.collectCurrentMonth(),
       previousMonth: await this.collectPreviousMonth(),
+      currentMonthResources: await this.collectCurrentMonthWithResources(),
+      previousMonthResources: await this.collectPreviousMonthWithResources(),
       yearToDate: await this.collectYearToDate(),
+      historicalMonths: await this.collectHistoricalMonths(12),
       rightsizing: await this.collectRightsizing(),
       anomalies: await this.collectAnomalies()
     };

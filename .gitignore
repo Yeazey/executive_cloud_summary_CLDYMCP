@@ -1,5 +1,8 @@
 node_modules/
 output/*.html
+output/*.json
 .env
 *.log
 .DS_Store
+src/config.mjs
+.bob/
