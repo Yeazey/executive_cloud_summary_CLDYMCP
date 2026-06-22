@@ -150,6 +150,17 @@ export class CloudabilityDataCollector {
     }, { results: [] });
   }
 
+  async collectAISpend() {
+    const dates = DATE_CONFIG.getCurrentMonth();
+    console.log('🤖 Collecting AI spend data...');
+    return await this.callToolSafe('cldy_cost_report_run', {
+      dimensions: ['enhanced_service_name', 'usage_type', 'vendor'],
+      metrics: ['total_amortized_cost', 'usage_quantity'],
+      start_date: dates.start, end_date: dates.end,
+      sort_by: 'total_amortized_cost', order: 'DESC', limit: 300
+    }, { results: [] });
+  }
+
   async collectAnomalies() {
     const dates = DATE_CONFIG.getLast90Days();
     const viewId = await this.getDefaultViewId();
@@ -220,7 +231,8 @@ export class CloudabilityDataCollector {
       byProduct: await this.collectByBusinessDimension('category4'),
       byApplication: await this.collectByBusinessDimension('category3'),
       byBusinessUnit: await this.collectByBusinessDimension('category5'),
-      byTeam: await this.collectByBusinessDimension('category2')
+      byTeam: await this.collectByBusinessDimension('category2'),
+      aiSpend: await this.collectAISpend()
     };
 
     await this.client.close();
