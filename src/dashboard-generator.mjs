@@ -3,6 +3,7 @@ import { CloudabilityDataCollector } from './data-collector.mjs';
 import { UnitEconomicsCalculator } from './unit-economics.mjs';
 import { CHART_COLORS, OUTPUT_PATH, BUDGET_CONFIG, DATE_CONFIG } from './config.mjs';
 import fs from 'fs';
+import path from 'path';
 import { exec } from 'child_process';
 
 class DashboardGenerator {
@@ -680,6 +681,8 @@ class DashboardGenerator {
   }
 
   async save() {
+    const dir = path.dirname(OUTPUT_PATH);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     const html = this.generateHTML();
     fs.writeFileSync(OUTPUT_PATH, html);
     console.log(`✅ Dashboard generated: ${OUTPUT_PATH}`);

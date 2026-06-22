@@ -1,8 +1,8 @@
 node_modules/
-output/*.html
-output/*.json
+output/
 .env
-*.log
-.DS_Store
 src/config.mjs
-.bob/
+.DS_Store
+*.log
+.idea/
+.vscode/
