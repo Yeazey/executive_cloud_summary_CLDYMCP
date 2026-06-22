@@ -1,0 +1,17 @@
+{
+  "name": "cloudability-executive-dashboard",
+  "version": "1.0.0",
+  "description": "Automated cloud cost executive dashboard generator",
+  "type": "module",
+  "main": "src/dashboard-generator.mjs",
+  "scripts": {
+    "generate": "node src/dashboard-generator.mjs",
+    "collect": "node src/data-collector.mjs"
+  },
+  "keywords": ["cloudability", "dashboard", "cloud-costs", "finops"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  }
+}
