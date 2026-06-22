@@ -174,6 +174,17 @@ export class CloudabilityDataCollector {
     }, { results: [] });
   }
 
+  async collectCommitments() {
+    const dates = DATE_CONFIG.getCurrentMonth();
+    console.log('💳 Collecting commitment data...');
+    return await this.callToolSafe('cldy_cost_report_run', {
+      dimensions: ['lease_type', 'vendor', 'enhanced_service_name'],
+      metrics: ['total_amortized_cost', 'public_on_demand_cost', 'unblended_cost'],
+      start_date: dates.start, end_date: dates.end,
+      sort_by: 'total_amortized_cost', order: 'DESC', limit: 100
+    }, { results: [] });
+  }
+
   async collectAnomalies() {
     const dates = DATE_CONFIG.getLast90Days();
     const viewId = await this.getDefaultViewId();
@@ -245,7 +256,8 @@ export class CloudabilityDataCollector {
       byApplication: await this.collectByBusinessDimension('category3'),
       byBusinessUnit: await this.collectByBusinessDimension('category5'),
       byTeam: await this.collectByBusinessDimension('category2'),
-      aiSpend: await this.collectAISpend()
+      aiSpend: await this.collectAISpend(),
+      commitments: await this.collectCommitments()
     };
 
     await this.client.close();
