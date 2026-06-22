@@ -7,9 +7,11 @@
  */
 
 export class UnitEconomicsCalculator {
-  constructor(currentMonthResources, previousMonthResources) {
+  constructor(currentMonthResources, previousMonthResources, rightsizingData = []) {
     this.currentMonthResources = currentMonthResources;
     this.previousMonthResources = previousMonthResources;
+    this.rightsizingData = rightsizingData;
+    this._summaryCache = null;
   }
 
   /**
@@ -23,40 +25,41 @@ export class UnitEconomicsCalculator {
       byService: this.calculateByService(),
       byInstanceType: this.calculateByInstanceType(),
       trends: this.calculateTrends(),
-      commitmentImpact: this.calculateCommitmentImpact()
+      commitmentImpact: this.calculateCommitmentImpact(),
+      esr: this.calculateESR(),
+      waste: this.calculateWaste()
     };
   }
 
   /**
-   * Calculate high-level summary metrics
+   * Calculate high-level summary metrics (memoized)
    */
   calculateSummary() {
+    if (this._summaryCache) return this._summaryCache;
+
     const current = this.aggregateMetrics(this.currentMonthResources.results);
     const previous = this.aggregateMetrics(this.previousMonthResources.results);
 
-    return {
+    this._summaryCache = {
       current: {
-        // On-Demand (what you'd pay without commitments)
         onDemand: {
           totalCost: current.public_on_demand_cost,
           costPerVCPUHour: this.safeDivide(current.public_on_demand_cost, current.vcpu_hours),
           costPerUsageHour: this.safeDivide(current.public_on_demand_cost, current.usage_hours),
           costPerGBMonth: this.safeDivide(current.public_on_demand_cost, current.gb_months),
-          costPerGBHour: this.safeDivide(current.public_on_demand_cost, current.byte_hours),
-          costPerGBTransferred: this.safeDivide(current.public_on_demand_cost, current.bytes_transferred),
+          costPerGBHour: current.byte_hours > 0 ? this.safeDivide(current.public_on_demand_cost, current.byte_hours) : null,
+          costPerGBTransferred: current.bytes_transferred > 0 ? this.safeDivide(current.public_on_demand_cost, current.bytes_transferred) : null,
           costPerResource: this.safeDivide(current.public_on_demand_cost, current.resource_identifier_count)
         },
-        // Amortized (actual spend with RI/SP discounts)
         amortized: {
           totalCost: current.total_amortized_cost,
           costPerVCPUHour: this.safeDivide(current.total_amortized_cost, current.vcpu_hours),
           costPerUsageHour: this.safeDivide(current.total_amortized_cost, current.usage_hours),
           costPerGBMonth: this.safeDivide(current.total_amortized_cost, current.gb_months),
-          costPerGBHour: this.safeDivide(current.total_amortized_cost, current.byte_hours),
-          costPerGBTransferred: this.safeDivide(current.total_amortized_cost, current.bytes_transferred),
+          costPerGBHour: current.byte_hours > 0 ? this.safeDivide(current.total_amortized_cost, current.byte_hours) : null,
+          costPerGBTransferred: current.bytes_transferred > 0 ? this.safeDivide(current.total_amortized_cost, current.bytes_transferred) : null,
           costPerResource: this.safeDivide(current.total_amortized_cost, current.resource_identifier_count)
         },
-        // Resource totals
         resources: {
           vcpuHours: current.vcpu_hours,
           usageHours: current.usage_hours,
@@ -72,8 +75,8 @@ export class UnitEconomicsCalculator {
           costPerVCPUHour: this.safeDivide(previous.public_on_demand_cost, previous.vcpu_hours),
           costPerUsageHour: this.safeDivide(previous.public_on_demand_cost, previous.usage_hours),
           costPerGBMonth: this.safeDivide(previous.public_on_demand_cost, previous.gb_months),
-          costPerGBHour: this.safeDivide(previous.public_on_demand_cost, previous.byte_hours),
-          costPerGBTransferred: this.safeDivide(previous.public_on_demand_cost, previous.bytes_transferred),
+          costPerGBHour: previous.byte_hours > 0 ? this.safeDivide(previous.public_on_demand_cost, previous.byte_hours) : null,
+          costPerGBTransferred: previous.bytes_transferred > 0 ? this.safeDivide(previous.public_on_demand_cost, previous.bytes_transferred) : null,
           costPerResource: this.safeDivide(previous.public_on_demand_cost, previous.resource_identifier_count)
         },
         amortized: {
@@ -81,8 +84,8 @@ export class UnitEconomicsCalculator {
           costPerVCPUHour: this.safeDivide(previous.total_amortized_cost, previous.vcpu_hours),
           costPerUsageHour: this.safeDivide(previous.total_amortized_cost, previous.usage_hours),
           costPerGBMonth: this.safeDivide(previous.total_amortized_cost, previous.gb_months),
-          costPerGBHour: this.safeDivide(previous.total_amortized_cost, previous.byte_hours),
-          costPerGBTransferred: this.safeDivide(previous.total_amortized_cost, previous.bytes_transferred),
+          costPerGBHour: previous.byte_hours > 0 ? this.safeDivide(previous.total_amortized_cost, previous.byte_hours) : null,
+          costPerGBTransferred: previous.bytes_transferred > 0 ? this.safeDivide(previous.total_amortized_cost, previous.bytes_transferred) : null,
           costPerResource: this.safeDivide(previous.total_amortized_cost, previous.resource_identifier_count)
         },
         resources: {
@@ -95,6 +98,8 @@ export class UnitEconomicsCalculator {
         }
       }
     };
+
+    return this._summaryCache;
   }
 
   /**
@@ -242,8 +247,8 @@ export class UnitEconomicsCalculator {
         },
         previous: {
           onDemand: {
-            totalCost: previous.unblended_cost,
-            costPerUsageHour: this.safeDivide(previous.unblended_cost, previous.usage_hours)
+            totalCost: previous.public_on_demand_cost,
+            costPerUsageHour: this.safeDivide(previous.public_on_demand_cost, previous.usage_hours)
           },
           amortized: {
             totalCost: previous.total_amortized_cost,
@@ -257,7 +262,7 @@ export class UnitEconomicsCalculator {
   }
 
   /**
-   * Calculate trends and changes
+   * Calculate trends and changes (uses memoized summary)
    */
   calculateTrends() {
     const summary = this.calculateSummary();
@@ -315,7 +320,6 @@ export class UnitEconomicsCalculator {
     const current = this.aggregateMetrics(this.currentMonthResources.results);
     const previous = this.aggregateMetrics(this.previousMonthResources.results);
 
-    // Correct calculation: On-Demand cost - Amortized cost = RI/SP savings
     const currentSavings = current.public_on_demand_cost - current.total_amortized_cost;
     const previousSavings = previous.public_on_demand_cost - previous.total_amortized_cost;
 
@@ -343,6 +347,156 @@ export class UnitEconomicsCalculator {
         ? `RI/SP commitments are saving $${(currentSavings / 1000).toFixed(1)}K/month (${currentSavingsPercent.toFixed(1)}%)`
         : 'No RI/SP savings detected - consider commitment purchases'
     };
+  }
+
+  /**
+   * Calculate Effective Savings Rate (ESR)
+   * ESR = 1 - (amortized / onDemand) expressed as percentage
+   */
+  calculateESR() {
+    const current = this.aggregateMetrics(this.currentMonthResources.results);
+    const previous = this.aggregateMetrics(this.previousMonthResources.results);
+
+    const currentRate = current.public_on_demand_cost > 0
+      ? (1 - (current.total_amortized_cost / current.public_on_demand_cost)) * 100
+      : 0;
+    const previousRate = previous.public_on_demand_cost > 0
+      ? (1 - (previous.total_amortized_cost / previous.public_on_demand_cost)) * 100
+      : 0;
+
+    const delta = currentRate - previousRate;
+    let direction;
+    if (delta > 1) direction = 'improving';
+    else if (delta < -1) direction = 'degrading';
+    else direction = 'stable';
+
+    const percentile = this._esrPercentile(currentRate);
+    const target75thRate = 23;
+    let targetSavings = 0;
+    if (currentRate < target75thRate && current.public_on_demand_cost > 0) {
+      targetSavings = (target75thRate - currentRate) / 100 * current.public_on_demand_cost;
+    }
+
+    return {
+      current: {
+        rate: currentRate,
+        onDemandTotal: current.public_on_demand_cost,
+        amortizedTotal: current.total_amortized_cost,
+        savings: current.public_on_demand_cost - current.total_amortized_cost
+      },
+      previous: {
+        rate: previousRate,
+        onDemandTotal: previous.public_on_demand_cost,
+        amortizedTotal: previous.total_amortized_cost,
+        savings: previous.public_on_demand_cost - previous.total_amortized_cost
+      },
+      trend: { direction, delta },
+      percentile,
+      targetSavings
+    };
+  }
+
+  /**
+   * Calculate waste estimates from available data
+   */
+  calculateWaste() {
+    const current = this.aggregateMetrics(this.currentMonthResources.results);
+
+    // Rightsizing waste
+    const rightsizingAmount = this.rightsizingData.reduce(
+      (sum, r) => sum + parseFloat(r.monthlySavings || 0), 0
+    );
+    const rightsizingCount = this.rightsizingData.length;
+
+    // Low utilization: instances where cost/vCPU > 2x account average
+    const currentByAccount = this.groupBy(this.currentMonthResources.results, 'vendor_account_name');
+    let lowUtilAmount = 0;
+    let lowUtilCount = 0;
+
+    for (const records of Object.values(currentByAccount)) {
+      const agg = this.aggregateMetrics(records);
+      const avgCostPerVCPU = this.safeDivide(agg.public_on_demand_cost, agg.vcpu_hours);
+      if (avgCostPerVCPU === 0) continue;
+
+      for (const record of records) {
+        const cost = parseFloat(record.public_on_demand_cost || 0);
+        const vcpu = parseFloat(record.vcpu_hours || 0);
+        if (vcpu === 0) continue;
+        const recordCostPerVCPU = cost / vcpu;
+        if (recordCostPerVCPU > avgCostPerVCPU * 2) {
+          lowUtilAmount += cost - (avgCostPerVCPU * vcpu);
+          lowUtilCount++;
+        }
+      }
+    }
+
+    // Commitment waste: if ESR is below expected, estimate unused commitment $
+    const esr = this.calculateESR();
+    let commitmentWaste = 0;
+    if (esr.current.rate < 23 && current.total_amortized_cost > 0) {
+      // Expected savings at 75th percentile minus actual savings
+      const expectedSavings = current.public_on_demand_cost * 0.23;
+      const actualSavings = current.public_on_demand_cost - current.total_amortized_cost;
+      if (actualSavings < expectedSavings && actualSavings > 0) {
+        commitmentWaste = expectedSavings - actualSavings;
+      }
+    }
+
+    const total = rightsizingAmount + lowUtilAmount + commitmentWaste;
+    const totalCost = current.public_on_demand_cost || 1;
+
+    return {
+      total,
+      categories: [
+        {
+          name: 'Rightsizing',
+          amount: rightsizingAmount,
+          count: rightsizingCount,
+          percent: this.safeDivide(rightsizingAmount, total) * 100
+        },
+        {
+          name: 'Low Utilization',
+          amount: lowUtilAmount,
+          count: lowUtilCount,
+          percent: this.safeDivide(lowUtilAmount, total) * 100
+        },
+        {
+          name: 'Commitment Waste',
+          amount: commitmentWaste,
+          percent: this.safeDivide(commitmentWaste, total) * 100
+        }
+      ],
+      industryComparison: {
+        yourPercent: this.safeDivide(total, totalCost) * 100,
+        industryAvg: 29
+      }
+    };
+  }
+
+  /**
+   * Helper: Interpolate ESR percentile from benchmarks
+   * 0%=50th, 23%=75th, 40%=90th, 46%=98th
+   */
+  _esrPercentile(rate) {
+    const benchmarks = [
+      { rate: 0, percentile: 50 },
+      { rate: 23, percentile: 75 },
+      { rate: 40, percentile: 90 },
+      { rate: 46, percentile: 98 }
+    ];
+
+    if (rate <= 0) return 50;
+    if (rate >= 46) return 98;
+
+    for (let i = 0; i < benchmarks.length - 1; i++) {
+      const low = benchmarks[i];
+      const high = benchmarks[i + 1];
+      if (rate >= low.rate && rate <= high.rate) {
+        const t = (rate - low.rate) / (high.rate - low.rate);
+        return low.percentile + t * (high.percentile - low.percentile);
+      }
+    }
+    return 50;
   }
 
   /**

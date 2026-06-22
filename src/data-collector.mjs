@@ -122,6 +122,21 @@ export class CloudabilityDataCollector {
     }, []);
   }
 
+  async collectForecast() {
+    console.log('🔮 Collecting forecast...');
+    return await this.callToolSafe('cldy_forecast_get', {}, null);
+  }
+
+  async collectEstimate() {
+    console.log('📐 Collecting current period estimate...');
+    return await this.callToolSafe('cldy_estimate_get', {}, null);
+  }
+
+  async collectBudgets() {
+    console.log('💰 Collecting budgets...');
+    return await this.callToolSafe('list_budgets', { limit: 50 }, []);
+  }
+
   async collectAnomalies() {
     const dates = DATE_CONFIG.getLast90Days();
     const viewId = await this.getDefaultViewId();
@@ -185,7 +200,10 @@ export class CloudabilityDataCollector {
       yearToDate: await this.collectYearToDate(),
       historicalMonths: await this.collectHistoricalMonths(12),
       rightsizing: await this.collectRightsizing(),
-      anomalies: await this.collectAnomalies()
+      anomalies: await this.collectAnomalies(),
+      forecast: await this.collectForecast(),
+      estimate: await this.collectEstimate(),
+      budgets: await this.collectBudgets()
     };
 
     await this.client.close();
