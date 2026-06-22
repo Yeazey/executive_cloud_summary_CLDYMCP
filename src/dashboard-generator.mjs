@@ -7,7 +7,7 @@ import fs from 'fs';
 import path from 'path';
 import { exec } from 'child_process';
 
-const CLDY_BASE = 'https://app.cloudability.com';
+const CLDY_BASE = 'https://app.apptio.com/cloudability';
 const COMPUTE_SERVICE_PATTERNS = ['EC2', 'Compute', 'Virtual Machine', 'GCE', 'OCI Compute', 'VM', 'Container', 'ECS', 'EKS', 'AKS', 'GKE'];
 const MATURITY_MAP = { rightsizing: 'Crawl', commitments: 'Walk', efficiency: 'Run', anomaly: 'Crawl' };
 
@@ -90,8 +90,18 @@ class DashboardGenerator {
 
   pct(n) { return n != null ? `${n >= 0 ? '+' : ''}${n.toFixed(1)}%` : '0%'; }
 
-  cldyLink(path, label = '🔗') {
-    return `<a href="${CLDY_BASE}/${path}" target="_blank" title="Open in Cloudability" style="text-decoration:none;margin-left:6px;font-size:0.8em;opacity:0.7">${label}</a>`;
+  cldyLink(route, params = {}, label = '🔗') {
+    const cm = DATE_CONFIG.getCurrentMonth();
+    const dateParams = `start_date=${cm.start}&end_date=${cm.end}`;
+    let url = `${CLDY_BASE}#/${route}`;
+    const qp = [];
+    if (params.dates !== false) qp.push(dateParams);
+    if (params.dimensions) qp.push(`dimensions=${params.dimensions}`);
+    if (params.metrics) qp.push(`metrics=${params.metrics}`);
+    if (params.filters) qp.push(`filters=${encodeURIComponent(params.filters)}`);
+    if (params.viewId) qp.push(`view_id=${params.viewId}`);
+    if (qp.length) url += (url.includes('?') ? '&' : '?') + qp.join('&');
+    return `<a href="${url}" target="_blank" title="Open in Cloudability" style="text-decoration:none;margin-left:6px;font-size:0.8em;opacity:0.7">${label}</a>`;
   }
 
   isComputeService(name) {
@@ -266,31 +276,31 @@ ${this.generateAnomaliesPage(anomalies)}
   <div class="page active" id="overview">
     <div class="grid grid-5">
       <div class="card kpi-card">
-        <div class="kpi-label">MTD Spend ${this.cldyLink('#/cost-explorer')}</div>
+        <div class="kpi-label">MTD Spend ${this.cldyLink('cost-explorer', { dimensions: 'vendor_account_name,category3', metrics: 'total_amortized_cost,public_on_demand_cost' })}</div>
         <div class="kpi-value">${this.fmt(metrics.currentTotal)}</div>
         <div class="kpi-delta ${metrics.momChange > 0 ? 'down' : 'up'}">${metrics.momChange > 0 ? '▲' : '▼'} ${Math.abs(metrics.momChange).toFixed(1)}% vs last month</div>
         <div class="kpi-context">Day ${this.data.metadata?.currentMonth?.day || '?'} of month</div>
       </div>
       <div class="card kpi-card">
-        <div class="kpi-label">Projected Month-End ${this.cldyLink('#/cost-explorer')}</div>
+        <div class="kpi-label">Projected Month-End ${this.cldyLink('cost-explorer', { dimensions: 'vendor_account_name', metrics: 'total_amortized_cost,public_on_demand_cost' })}</div>
         <div class="kpi-value">${this.fmt(metrics.projectedMonthly)}</div>
         <div class="kpi-delta ${metrics.projectedMonthly > BUDGET_CONFIG.monthly ? 'down' : 'up'}">${metrics.projectedMonthly > BUDGET_CONFIG.monthly ? '▲ Over' : '▼ Under'} budget</div>
         <div class="kpi-context">Budget: ${this.fmt(BUDGET_CONFIG.monthly)}/mo</div>
       </div>
       <div class="card kpi-card">
-        <div class="kpi-label">Effective Savings Rate ${this.cldyLink('#/rightsizing')}</div>
+        <div class="kpi-label">Effective Savings Rate ${this.cldyLink('rightsizing', { dates: false })}</div>
         <div class="kpi-value">${esrVal.toFixed(1)}%</div>
         <div class="kpi-delta ${esrVal >= 23 ? 'up' : 'neutral'}">${esr?.percentile ? `${esr.percentile.toFixed(0)}th percentile` : '—'}</div>
         <div class="kpi-context">Saving ${this.fmt(savings)}/mo via RI/SP</div>
       </div>
       <div class="card kpi-card">
-        <div class="kpi-label">YTD Spend ${this.cldyLink('#/cost-explorer')}</div>
+        <div class="kpi-label">YTD Spend ${this.cldyLink('cost-explorer', { dimensions: 'vendor_account_name', metrics: 'total_amortized_cost,public_on_demand_cost' })}</div>
         <div class="kpi-value">${this.fmt(metrics.ytdTotal)}</div>
         <div class="kpi-delta neutral">${metrics.ytdBudgetPercent.toFixed(0)}% of annual budget</div>
         <div class="kpi-context">Annual: ${this.fmt(BUDGET_CONFIG.annual)}</div>
       </div>
       <div class="card kpi-card">
-        <div class="kpi-label">Optimization Potential ${this.cldyLink('#/rightsizing')}</div>
+        <div class="kpi-label">Optimization Potential ${this.cldyLink('rightsizing', { dates: false })}</div>
         <div class="kpi-value">${this.fmt((this.data.rightsizing || []).reduce((s, r) => s + (r.monthlySavings || r.potentialSavings || 0), 0))}</div>
         <div class="kpi-delta up">${(this.data.rightsizing || []).length} recommendations</div>
         <div class="kpi-context">Monthly savings available</div>
@@ -299,11 +309,11 @@ ${this.generateAnomaliesPage(anomalies)}
 
     <div class="grid grid-2">
       <div class="chart-wrap">
-        <h3>12-Month Cost Trend ${this.cldyLink('#/cost-explorer')}</h3>
+        <h3>12-Month Cost Trend ${this.cldyLink('cost-explorer', { dimensions: 'vendor_account_name', metrics: 'total_amortized_cost,public_on_demand_cost' })}</h3>
         <div class="chart-container"><canvas id="trendChart"></canvas></div>
       </div>
       <div class="chart-wrap">
-        <h3>Spend by Account ${this.cldyLink('#/cost-explorer')}</h3>
+        <h3>Spend by Account ${this.cldyLink('cost-explorer', { dimensions: 'vendor_account_name', metrics: 'total_amortized_cost,public_on_demand_cost' })}</h3>
         <div class="pivot-controls">
           <button class="pivot-btn active" onclick="pivotAccounts('cost')">By Cost</button>
           <button class="pivot-btn" onclick="pivotAccounts('growth')">By Growth</button>
@@ -313,7 +323,7 @@ ${this.generateAnomaliesPage(anomalies)}
     </div>
 
     <div class="card">
-      <div class="section-title">📊 Account Breakdown ${this.cldyLink('#/views')}
+      <div class="section-title">📊 Account Breakdown ${this.cldyLink('views', { dates: false })}
         <div class="pivot-controls" style="margin:0;margin-left:auto" id="dimension-pivot">
           <button class="pivot-btn active" onclick="pivotDimension('account')">Account</button>
           <button class="pivot-btn" onclick="pivotDimension('product')">Product</button>
@@ -362,18 +372,18 @@ ${this.generateAnomaliesPage(anomalies)}
     <div class="card" style="margin-bottom:20px;background:linear-gradient(135deg,rgba(99,102,241,0.1),rgba(74,222,128,0.05));border-color:rgba(99,102,241,0.3)">
       <div class="grid" style="grid-template-columns:1fr 1fr 1fr;gap:24px;align-items:center">
         <div>
-          <div class="kpi-label">Effective Savings Rate ${this.cldyLink('#/rightsizing')}</div>
+          <div class="kpi-label">Effective Savings Rate ${this.cldyLink('rightsizing', { dates: false })}</div>
           <div class="kpi-value" style="color:var(--accent)">${esrVal.toFixed(1)}%</div>
           <div class="benchmark-bar"><div class="benchmark-fill" style="width:${Math.min(esrVal / 46 * 100, 100)}%;background:var(--accent)"></div></div>
           <div class="kpi-context">${esrPct.toFixed(0)}th percentile · Target: 23%+ (75th)</div>
         </div>
         <div>
-          <div class="kpi-label">Monthly RI/SP Savings ${this.cldyLink('#/rightsizing')}</div>
+          <div class="kpi-label">Monthly RI/SP Savings ${this.cldyLink('rightsizing', { dates: false })}</div>
           <div class="kpi-value" style="color:var(--positive)">${this.fmt(esr?.current?.savings || 0)}</div>
           <div class="kpi-context">On-Demand: ${this.fmt(esr?.current?.onDemandTotal || 0)} → Amortized: ${this.fmt(esr?.current?.amortizedTotal || 0)}</div>
         </div>
         <div>
-          <div class="kpi-label">Estimated Waste ${this.cldyLink('#/rightsizing')}</div>
+          <div class="kpi-label">Estimated Waste ${this.cldyLink('rightsizing', { dates: false })}</div>
           <div class="kpi-value" style="color:var(--negative)">${this.fmt(wasteTotal)}</div>
           <div class="kpi-context">${waste?.industryComparison ? `Your ${waste.industryComparison.yourPercent?.toFixed(0) || '?'}% vs industry avg ${waste.industryComparison.industryAvg}%` : '—'}</div>
         </div>
@@ -382,25 +392,25 @@ ${this.generateAnomaliesPage(anomalies)}
 
     <div class="grid grid-5" style="grid-template-columns:repeat(4,1fr)">
       <div class="card kpi-card">
-        <div class="kpi-label">Cost per vCPU Hour ${this.cldyLink('#/cost-explorer')}</div>
+        <div class="kpi-label">Cost per vCPU Hour ${this.cldyLink('cost-explorer', { dimensions: 'vendor_account_name', metrics: 'total_amortized_cost,public_on_demand_cost' })}</div>
         <div class="kpi-value">$${costPerVcpu.toFixed(4)}</div>
         <div class="kpi-delta ${(trends?.amortized?.costPerVCPUHourChange ?? 0) < 0 ? 'up' : 'down'}">${this.pct(trends?.amortized?.costPerVCPUHourChange ?? 0)} MoM</div>
         <div class="kpi-context">On-Demand: $${costPerVcpuOD.toFixed(4)} · Save: ${costPerVcpuOD > 0 ? ((1 - costPerVcpu / costPerVcpuOD) * 100).toFixed(0) : 0}%</div>
       </div>
       <div class="card kpi-card">
-        <div class="kpi-label">Cost per Usage Hour ${this.cldyLink('#/cost-explorer')}</div>
+        <div class="kpi-label">Cost per Usage Hour ${this.cldyLink('cost-explorer', { dimensions: 'vendor_account_name', metrics: 'total_amortized_cost,public_on_demand_cost' })}</div>
         <div class="kpi-value">$${costPerUsage.toFixed(4)}</div>
         <div class="kpi-delta ${(trends?.amortized?.costPerUsageHourChange ?? 0) < 0 ? 'up' : 'down'}">${this.pct(trends?.amortized?.costPerUsageHourChange ?? 0)} MoM</div>
         <div class="kpi-context">${(cur?.resources?.usageHours ?? 0) > 0 ? `${(cur.resources.usageHours / 1000).toFixed(0)}K hours this month` : '—'}</div>
       </div>
       <div class="card kpi-card">
-        <div class="kpi-label">Cost per GB Month ${this.cldyLink('#/cost-explorer')}</div>
+        <div class="kpi-label">Cost per GB Month ${this.cldyLink('cost-explorer', { dimensions: 'vendor_account_name', metrics: 'total_amortized_cost,public_on_demand_cost' })}</div>
         <div class="kpi-value">$${costPerGB.toFixed(4)}</div>
         <div class="kpi-delta ${(trends?.amortized?.costPerGBMonthChange ?? 0) < 0 ? 'up' : 'down'}">${this.pct(trends?.amortized?.costPerGBMonthChange ?? 0)} MoM</div>
         <div class="kpi-context">${(cur?.resources?.gbMonths ?? 0) > 0 ? `${(cur.resources.gbMonths / 1000).toFixed(0)}K GB stored` : '—'}</div>
       </div>
       <div class="card kpi-card">
-        <div class="kpi-label">Cost per Resource ${this.cldyLink('#/cost-explorer')}</div>
+        <div class="kpi-label">Cost per Resource ${this.cldyLink('cost-explorer', { dimensions: 'vendor_account_name', metrics: 'total_amortized_cost,public_on_demand_cost' })}</div>
         <div class="kpi-value">${this.fmt(costPerRes)}</div>
         <div class="kpi-delta neutral">${(cur?.resources?.resourceCount ?? 0).toFixed(0)} resources</div>
         <div class="kpi-context">${(cur?.resources?.vcpuHours ?? 0) > 0 ? `${(cur.resources.vcpuHours / 1000).toFixed(0)}K vCPU-hrs` : '—'}</div>
@@ -409,17 +419,17 @@ ${this.generateAnomaliesPage(anomalies)}
 
     <div class="grid grid-2">
       <div class="chart-wrap">
-        <h3>ESR Trend (12 Months) ${this.cldyLink('#/rightsizing')}</h3>
+        <h3>ESR Trend (12 Months) ${this.cldyLink('rightsizing', { dates: false })}</h3>
         <div class="chart-container"><canvas id="esrChart"></canvas></div>
       </div>
       <div class="chart-wrap">
-        <h3>Cost per vCPU Trend ${this.cldyLink('#/cost-explorer')}</h3>
+        <h3>Cost per vCPU Trend ${this.cldyLink('cost-explorer', { dimensions: 'vendor_account_name', metrics: 'total_amortized_cost,public_on_demand_cost' })}</h3>
         <div class="chart-container"><canvas id="vcpuChart"></canvas></div>
       </div>
     </div>
 
     <div class="card">
-      <div class="section-title">📋 Service-Level Unit Economics (Compute Only) ${this.cldyLink('#/cost-explorer')}
+      <div class="section-title">📋 Service-Level Unit Economics (Compute Only) ${this.cldyLink('cost-explorer', { dimensions: 'vendor_account_name', metrics: 'total_amortized_cost,public_on_demand_cost' })}
         <div class="pivot-controls" style="margin:0;margin-left:auto">
           <button class="pivot-btn active" onclick="pivotServiceTable('vcpu')">Cost/vCPU</button>
           <button class="pivot-btn" onclick="pivotServiceTable('usage')">Cost/Usage Hr</button>
@@ -441,7 +451,7 @@ ${this.generateAnomaliesPage(anomalies)}
     </div>
 
     <div class="card" style="margin-top:16px">
-      <div class="section-title">🖥️ Instance Type Analysis ${this.cldyLink('#/rightsizing')} <span class="drill-toggle" onclick="toggleDrill('instance-drill')">[show all]</span></div>
+      <div class="section-title">🖥️ Instance Type Analysis ${this.cldyLink('rightsizing', { dates: false })} <span class="drill-toggle" onclick="toggleDrill('instance-drill')">[show all]</span></div>
       <table>
         <tr><th>Instance Type</th><th>Cost/Hr (Amortized)</th><th>Cost/Hr (On-Demand)</th><th>Usage Hours</th><th>RI/SP Savings</th></tr>
         ${byInstance.slice(0, 8).map(([type, d]) => {
@@ -471,7 +481,7 @@ ${this.generateAnomaliesPage(anomalies)}
 
     return `
   <div class="page" id="insights">
-    <div class="section-title">⚡ Prioritized Actions ${this.cldyLink('#/rightsizing')}</div>
+    <div class="section-title">⚡ Prioritized Actions ${this.cldyLink('rightsizing', { dates: false })}</div>
     <div class="pivot-controls" id="action-filters">
       <button class="pivot-btn active" onclick="filterActions('all')">All (${actions.length})</button>
       <button class="pivot-btn" onclick="filterActions('DO_NOW')">Do Now</button>
@@ -551,12 +561,12 @@ ${this.generateAnomaliesPage(anomalies)}
   <div class="page" id="optimization">
     <div class="grid grid-3" style="grid-template-columns:1fr 1fr 1fr">
       <div class="card kpi-card">
-        <div class="kpi-label">Total Savings Available ${this.cldyLink('#/rightsizing')}</div>
+        <div class="kpi-label">Total Savings Available ${this.cldyLink('rightsizing', { dates: false })}</div>
         <div class="kpi-value" style="color:var(--positive)">${this.fmt(totalSavings)}<span style="font-size:0.4em;color:var(--muted)">/mo</span></div>
         <div class="kpi-context">${rightsizing.length} recommendations</div>
       </div>
       <div class="card kpi-card">
-        <div class="kpi-label">Estimated Waste ${this.cldyLink('#/rightsizing')}</div>
+        <div class="kpi-label">Estimated Waste ${this.cldyLink('rightsizing', { dates: false })}</div>
         <div class="kpi-value" style="color:var(--negative)">${this.fmt(waste?.total ?? 0)}<span style="font-size:0.4em;color:var(--muted)">/mo</span></div>
         <div class="kpi-context">Across ${categories.length} categories</div>
       </div>
@@ -569,7 +579,7 @@ ${this.generateAnomaliesPage(anomalies)}
 
     <div class="grid grid-2">
       <div class="chart-wrap">
-        <h3>Waste by Category ${this.cldyLink('#/rightsizing')}</h3>
+        <h3>Waste by Category ${this.cldyLink('rightsizing', { dates: false })}</h3>
         <div class="chart-container"><canvas id="wasteChart"></canvas></div>
       </div>
       <div class="card">
@@ -584,7 +594,7 @@ ${this.generateAnomaliesPage(anomalies)}
     </div>
 
     <div class="card">
-      <div class="section-title">🎯 Top Rightsizing Recommendations ${this.cldyLink('#/rightsizing')}
+      <div class="section-title">🎯 Top Rightsizing Recommendations ${this.cldyLink('rightsizing', { dates: false })}
         <div class="pivot-controls" style="margin:0;margin-left:auto">
           <button class="pivot-btn active" onclick="sortRightsizing('savings')">By Savings</button>
           <button class="pivot-btn" onclick="sortRightsizing('percent')">By % Reduction</button>
@@ -613,24 +623,24 @@ ${this.generateAnomaliesPage(anomalies)}
   <div class="page" id="anomalies">
     <div class="grid grid-3" style="grid-template-columns:1fr 1fr 1fr">
       <div class="card kpi-card">
-        <div class="kpi-label">Total Anomalies (90d) ${this.cldyLink('#/anomalies')}</div>
+        <div class="kpi-label">Total Anomalies (90d) ${this.cldyLink('anomalies', { viewId: this.data.viewId || '1706692' })}</div>
         <div class="kpi-value">${anomalies.length}</div>
         <div class="kpi-context">Last 90 days</div>
       </div>
       <div class="card kpi-card">
-        <div class="kpi-label">High Severity ${this.cldyLink('#/anomalies')}</div>
+        <div class="kpi-label">High Severity ${this.cldyLink('anomalies', { viewId: this.data.viewId || '1706692' })}</div>
         <div class="kpi-value" style="color:var(--negative)">${highSev.length}</div>
         <div class="kpi-context">Requires investigation</div>
       </div>
       <div class="card kpi-card">
-        <div class="kpi-label">Largest Spike ${this.cldyLink('#/anomalies')}</div>
+        <div class="kpi-label">Largest Spike ${this.cldyLink('anomalies', { viewId: this.data.viewId || '1706692' })}</div>
         <div class="kpi-value">${anomalies[0] ? `+${anomalies[0].percentageIncrease || 0}%` : '—'}</div>
         <div class="kpi-context">${anomalies[0]?.vendorAccountName || '—'}</div>
       </div>
     </div>
 
     <div class="card">
-      <div class="section-title">🚨 Anomaly Timeline ${this.cldyLink('#/anomalies')}
+      <div class="section-title">🚨 Anomaly Timeline ${this.cldyLink('anomalies', { viewId: this.data.viewId || '1706692' })}
         <div class="pivot-controls" style="margin:0;margin-left:auto">
           <button class="pivot-btn active" onclick="filterAnomalies('all')">All</button>
           <button class="pivot-btn" onclick="filterAnomalies('high')">High Only</button>
