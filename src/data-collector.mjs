@@ -123,13 +123,15 @@ export class CloudabilityDataCollector {
   }
 
   async collectForecast() {
+    const viewId = await this.getDefaultViewId();
     console.log('🔮 Collecting forecast...');
-    return await this.callToolSafe('cldy_forecast_get', {}, null);
+    return await this.callToolSafe('cldy_forecast_get', { view_id: viewId }, null);
   }
 
   async collectEstimate() {
+    const viewId = await this.getDefaultViewId();
     console.log('📐 Collecting current period estimate...');
-    return await this.callToolSafe('cldy_estimate_get', {}, null);
+    return await this.callToolSafe('cldy_estimate_get', { view_id: viewId }, null);
   }
 
   async collectBudgets() {
